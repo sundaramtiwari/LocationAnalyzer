@@ -23,8 +23,14 @@ public class LocalityDao {
             + "where l.city_id = ci.id and ci.COUNTRY_ID = co.id and co.COUNTRY_NAME=\'India\'";
 
     private static final String fetchHotelsQuery = "select a.HOTEL_ID, b.hotel_name, a.TA_HOTEL_ID, c.LATITUDE, c.LONGITUDE "
-            + "from hotel_rating_map a, hotel b, hotel_location_info c, city ci, country co " 
-            + "where a.hotel_id = b.id and b.id = c.HOTEL_ID and c.CITY_ID = ci.id and ci.COUNTRY_ID = co.id and co.COUNTRY_NAME=\'India\'";
+            + "from hotel_rating_map a, hotel b, hotel_location_info c, city ci, country co, PRODUCT.chmm_hotel_room_rate_info chi "
+            + "where a.hotel_id = b.id and b.id = c.HOTEL_ID and c.CITY_ID = ci.id and chi.hotel_id = b.id and ci.COUNTRY_ID = co.id and co.COUNTRY_NAME=\'India\' "
+            + "and chi.end_date >= sysdate and chi.status=\'A\'";
+    
+    private static final String fetchTAHotelIdQuery = "select a.HOTEL_ID, a.TA_HOTEL_ID "
+            + "from hotel_rating_map a, hotel_location_info c, city ci, country co, PRODUCT.chmm_hotel_room_rate_info chi "
+            + "where a.hotel_id = c.HOTEL_ID and c.CITY_ID = ci.id and chi.hotel_id = c.HOTEL_ID and ci.COUNTRY_ID = co.id and co.COUNTRY_NAME=\'India\' "
+            + "and chi.end_date >= sysdate and chi.status=\'A\'";
 
     public Map<Long, Locality> getLocalityMap() {
         Map<Long, Locality> localityMap = new HashMap<Long, Locality>();
@@ -33,10 +39,12 @@ public class LocalityDao {
         try {
             stmt = con.createStatement();
             System.out.println("Getting locality details from DB...");
+            
             ResultSet rs = stmt.executeQuery(fetchLocalitiesQuery);
             while (rs.next()) {
                 updateLocalityMap(localityMap, rs);
             }
+
             System.out.println("Locality details completed. ");
             return localityMap;
         } catch (Exception e) {
@@ -79,41 +87,76 @@ public class LocalityDao {
     }
 
     public Map<Long, Hotel> getLocalityMapForHotels() {
-        Map<Long, Hotel> hotelMap = new HashMap<Long, Hotel>();
+        Map<Long, Hotel> hotelMap = new HashMap<Long, Hotel>(31427);
         Connection con = JdbcFactory.getConnection(url, username, password);
         Statement stmt = null;
         try {
             stmt = con.createStatement();
+            stmt.setFetchSize(10000);
             System.out.println("Getting hotel details from DB...");
             ResultSet rs = stmt.executeQuery(fetchHotelsQuery);
+            long start = System.currentTimeMillis();
             while (rs.next()) {
                 updateHotelMap(hotelMap, rs);
             }
+            long end = System.currentTimeMillis();
+            System.out.println(end - start + " millisecs");
             System.out.println("Hotel details completed. ");
             return hotelMap;
         } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+            try {
+                if (con != null)
+                    con.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
         return hotelMap;
     }
 
+    public Map<Long, Long> getTAHotelIDs() {
+        Map<Long, Long> hotelMap = new HashMap<Long, Long>(31427);
+        Connection con = JdbcFactory.getConnection(url, username, password);
+        Statement stmt = null;
+        try {
+            stmt = con.createStatement();
+            stmt.setFetchSize(10000);
+            System.out.println("Getting hotel details from DB...");
+            ResultSet rs = stmt.executeQuery(fetchTAHotelIdQuery);
+            long start = System.currentTimeMillis();
+            while (rs.next()) {
+                updateTAMap(hotelMap, rs);
+            }
+            long end = System.currentTimeMillis();
+            System.out.println(end - start + " millisecs");
+            System.out.println("Hotel details completed. ");
+            return hotelMap;
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (con != null)
+                    con.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return hotelMap;
+    }
+    
     private void updateHotelMap(Map<Long, Hotel> hotelMap, ResultSet rs) {
         long id = 0, taId = 0;
         Hotel hotel = new Hotel();
         try {
-            if (rs.getObject("HOTEL_ID") != null) {
-                id = rs.getLong("HOTEL_ID");
-                hotel.setId(id);
-            }
+            id = rs.getLong("HOTEL_ID");
+            hotel.setId(id);
             if (rs.getObject("TA_HOTEL_ID") != null) {
                 String taIdStr = rs.getString("TA_HOTEL_ID");
                 if (isNumeric(taIdStr)) {
-                    try {
-                        taId = Long.valueOf(taIdStr);
-                        hotel.setTaHotelId(taId);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    taId = Long.valueOf(taIdStr);
+                    hotel.setTaHotelId(taId);
                 }
             }
             if (rs.getObject("LONGITUDE") != null) {
@@ -122,17 +165,32 @@ public class LocalityDao {
             if (rs.getObject("LATITUDE") != null) {
                 hotel.setLat(rs.getDouble("latitude"));
             }
-            if (rs.getObject("hotel_name") != null) {
-                hotel.setName(rs.getString("hotel_name"));
-            }
+            hotel.setName(rs.getString("hotel_name"));
         } catch (SQLException e) {
             e.printStackTrace();
         }
         hotelMap.put(id, hotel);
     }
     
-    public static boolean isNumeric(String str)
-    {
+    private void updateTAMap(Map<Long, Long> hotelMap, ResultSet rs) {
+        long id = 0, taId = 0;
+        Hotel hotel = new Hotel();
+        try {
+            id = rs.getLong("HOTEL_ID");
+            hotel.setId(id);
+            if (rs.getObject("TA_HOTEL_ID") != null) {
+                String taIdStr = rs.getString("TA_HOTEL_ID");
+                if (isNumeric(taIdStr)) {
+                    taId = Long.parseLong(taIdStr);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        hotelMap.put(id, taId);
+    }
+
+    public static boolean isNumeric(String str) {
         return str.matches("[+-]?\\d*?");
     }
 }
